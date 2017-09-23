@@ -2,34 +2,44 @@ from collections import defaultdict
 import hashlib
 import random
 
-class BucketSimulation:
-  def __init__(self, n_shoppers, n_types):
-    self.n_shoppers = n_shoppers
-    self.n_types = n_types
+## Questions:
+## (1) Does hashing lead to users being assigned to the same condition across experiments?
+## (2) Is the split even across partitions?
 
-  def generate_shoppers(self, random_partition=True):
+class Simulation:
+  def __init__(self, n_shoppers, n_partitions, uniform_partitions=True):
+    self.shoppers = {str(shopper_id): {'experiments': {}} for shopper_id in range(1, n_shoppers + 1)}
+    self.partitions = {str(partition): 1.0/n_partitions for partition in range(1, n_partitions + 1)}
+    self.experiments = {}
+    if not uniform_partitions:
+      self.adjust_probabilities()
+
+  def adjust_probabilities(self):
+    # Shift around partition probabilities
+    partition_1, probability_1 = self.partitions.popitem()
+    partition_2, probability_2 = self.partitions.popitem()
+
+    adjusted_probability = min(probability_1, probability_2)/2.0
+    self.partitions[partition_1] = probability_1 - adjusted_probability
+    self.partitions[partition_2] = probability_2 + adjusted_probability
+
+  def generate_shoppers(self):
     """
     Generates fake shoppers with some n-membered partition
     Can assign shoppers to partitions at random or in sequential blocks
     """
-    shoppers = {}
-    shopper_types = range(1, self.n_types + 1)
-    current_type = min(shopper_types)
 
-    for shopper_id in range(1, self.n_shoppers + 1):
-      if random_partition or (current_type + 1) > max(shopper_types): # leftovers if not evenly divisible
-        shopper_type = random.randrange(1, self.n_types + 1)
-      else: 
-        if shopper_id > (self.n_shoppers / self.n_types) * current_type: # At a partition boundary
-          current_type += 1    
-        shopper_type = current_type
+    partition_choices = []
 
-      shoppers[shopper_id] = { 'partition': shopper_type }
+    for partition in self.partitions: 
+      partition_choices.extend(partition * (int(self.partitions[partition] * 100)))
 
-    return shoppers
+    for shopper in self.shoppers:
+      shopper_partition = random.choice(partition_choices)
+      self.shoppers[shopper]['partition'] = shopper_partition
 
   def hash_bin(self, string_list):
-    """Return a condition using base-16 hash of a list of strings"""
+    """Return a hash of a list of strings"""
     hasher = hashlib.md5()
     for string in string_list:
       hasher.update(string)
@@ -38,14 +48,28 @@ class BucketSimulation:
 
     return hash_id
 
-  def bucket_users(self, experiment_name, percent_control=50, percent_treatment=50):
-    for shopper in shoppers:
+  def generate_experiment_name(self, n):
+    return ''.join(random.choice(string.ascii_uppercase + string.digits) for _ in range(n))
+
+  def bucket_shoppers(self):
+    experiment_name = self.generate_experiment_name(7)
+    self.experiments[experiment_name] = {}
+    buckets_by_partition = { partition: {} for partition in self.partitions }
+
+    for shopper in self.shoppers:
+      shopper_partition = self.shoppers[shopper]['partition']
       hash_id = self.hash_bin([shopper, experiment_name])
       bucket = 'control' if (hash_id % 100) < 50 else 'treatment'
-      shoppers[shopper][experiment_name] = self.hash_bin([shopper, experiment_name])
+      self.shoppers[shopper]['experiments'][experiment_name] = bucket
 
-    return shoppers
+      if bucket in self.experiments[experiment_name]:
+        self.experiments[experiment_name][bucket].add(shopper)
+      else:
+        self.experiments[experiment_name][bucket] = set([shopper])
 
-if __name__ == "__main__":
-  s = BucketSimulation(10000, 5)
-  s.generate_shoppers()
+      if bucket in buckets_by_partition[shopper_partition]:
+        buckets_by_partition[shopper_partition][bucket] += 1
+      else:
+        buckets_by_partition[shopper_partition][bucket] = 1
+
+    return buckets_by_partition

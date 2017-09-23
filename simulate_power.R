@@ -1,4 +1,5 @@
 pvals<-c()
+
 getMVBinomialData <- function(n, effect1, effect2) {
   f1_labels<-c(rep('A', n/2), rep('B', n/2))
   f2_labels<-c(rep('X', n/4), rep('Y', n/4), rep('X', n/4), rep('Y', n/4))
