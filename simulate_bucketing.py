@@ -1,6 +1,8 @@
 from collections import defaultdict
+from scipy import stats
 import hashlib
 import random
+import string
 
 ## Questions:
 ## (1) Does hashing lead to users being assigned to the same condition across experiments?
@@ -8,7 +10,7 @@ import random
 
 class Simulation:
   def __init__(self, n_shoppers, n_partitions, uniform_partitions=True):
-    self.shoppers = {str(shopper_id): {'experiments': {}} for shopper_id in range(1, n_shoppers + 1)}
+    self.shoppers = {str(shopper_id): { 'experiments': {}, 'cohorts': {}} for shopper_id in range(1, n_shoppers + 1)}
     self.partitions = {str(partition): 1.0/n_partitions for partition in range(1, n_partitions + 1)}
     self.experiments = {}
     if not uniform_partitions:
@@ -25,10 +27,8 @@ class Simulation:
 
   def generate_shoppers(self):
     """
-    Generates fake shoppers with some n-membered partition
-    Can assign shoppers to partitions at random or in sequential blocks
+    Generates partitioned fake shoppers
     """
-
     partition_choices = []
 
     for partition in self.partitions: 
@@ -48,11 +48,10 @@ class Simulation:
 
     return hash_id
 
-  def generate_experiment_name(self, n):
+  def generate_experiment_name(self, n=8):
     return ''.join(random.choice(string.ascii_uppercase + string.digits) for _ in range(n))
 
-  def bucket_shoppers(self):
-    experiment_name = self.generate_experiment_name(7)
+  def bucket_shoppers(self, experiment_name):
     self.experiments[experiment_name] = {}
     buckets_by_partition = { partition: {} for partition in self.partitions }
 
@@ -61,6 +60,10 @@ class Simulation:
       hash_id = self.hash_bin([shopper, experiment_name])
       bucket = 'control' if (hash_id % 100) < 50 else 'treatment'
       self.shoppers[shopper]['experiments'][experiment_name] = bucket
+      if bucket in self.shoppers[shopper]['cohorts']:
+        self.shoppers[shopper]['cohorts'][bucket] += 1
+      else:
+        self.shoppers[shopper]['cohorts'][bucket] = 1
 
       if bucket in self.experiments[experiment_name]:
         self.experiments[experiment_name][bucket].add(shopper)
@@ -73,3 +76,26 @@ class Simulation:
         buckets_by_partition[shopper_partition][bucket] = 1
 
     return buckets_by_partition
+
+  def analyze_deltas(self):
+    deltas = []
+    print 'Analyzing results'
+    for shopper in self.shoppers:
+      delta = abs(self.shoppers[shopper]['cohorts']['treatment'] - self.shoppers[shopper]['cohorts']['control'])
+      deltas.append(delta)
+
+    print 'Summary of deltas', stats.describe(deltas)
+    print 'Significantly different from 0', stats.ttest_1samp(deltas,0.0)
+    return deltas
+
+  def make_simulations(self, n_simulations):
+    buckets_by_partition = []
+    self.generate_shoppers()
+    for n in range(1, n_simulations + 1):
+      print 'Simulation', n
+      results = self.bucket_shoppers(self.generate_experiment_name())
+      buckets_by_partition.append(results)
+
+    self.analyze_deltas()
+    return buckets_by_partition
+
