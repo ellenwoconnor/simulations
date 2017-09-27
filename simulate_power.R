@@ -68,6 +68,7 @@ simulateLM<-function(n, simulations, effect1, effect2) {
   }
   return(data.frame(cbind(f1, f2)))
 }
+
 simulateX2<-function(n, simulations, effect1, effect2) {
   f1<-c()
   f2<-c()

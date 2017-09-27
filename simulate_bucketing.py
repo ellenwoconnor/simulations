@@ -5,10 +5,21 @@ import random
 import string
 import time
 import pickle
+import csv
 
 ## Questions:
 ## (1) Does hashing lead to users being assigned to the same condition across experiments? (not really)
 ## (2) Is the split even across partitions? (yes)
+
+def save_to_csv(filename, results):
+  """Writes a list of dictionaries to csv. Assumes all dictionaries are equal in length."""
+  with open(filename, 'w') as csvfile:
+    fieldnames = results[0].keys()
+    writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+    writer.writeheader()
+    for row in results:
+      writer.writerow(row)
+
 
 class Simulator:
   def __init__(self, n_shoppers, n_partitions, uniform_partitions=True):
@@ -34,6 +45,7 @@ class Simulator:
     self.partitions[partition_1] = probability_1 - adjusted_probability
     self.partitions[partition_2] = probability_2 + adjusted_probability
 
+
   def generate_shoppers(self):
     """Generates partitioned fake shoppers"""
     partition_choices = []
@@ -45,6 +57,7 @@ class Simulator:
       shopper_partition = random.choice(partition_choices)
       self.shoppers[shopper]['partition'] = shopper_partition
 
+
   def hash_bin(self, string_list):
     """Return a hash of a list of strings"""
     hasher = hashlib.md5()
@@ -55,9 +68,11 @@ class Simulator:
 
     return hash_id
 
+
   def generate_experiment_name(self, n=8):
     """Generate a random n-length experiment ID"""
     return ''.join(random.choice(string.ascii_uppercase + string.digits) for _ in range(n))
+
 
   def bucket_shoppers(self, experiment_name):
     """Assign each shopper a bucket for some experiment.
@@ -82,7 +97,7 @@ class Simulator:
         self.experiments[experiment_name][shopper_partition][bucket] = 1
 
 
-  def analyze_data(self):
+  def analyze_user_correlations(self):
     """Tests whether shoppers are assigned evenly to conditions"""
     results = []
     deltas = []
@@ -107,19 +122,29 @@ class Simulator:
     return results
 
 
-  def dump_data(self, n_simulations):
+  def analyze_partition_splits(self):
+    splits = []
+    for experiment in self.experiments:
+      x2, p_val = stats.chisquare(self.experiments[experiment]['1']['treatment'], self.experiments[experiment]['1']['treatment'])
+      splits.append({ 'x2': x2, 'p': p_val })
+
+    return splits
+
+
+  def pickle_simulations(self, n_simulations):
     now = time.strftime("%x")
     shoppers_file = '{}_{}_shoppers.p'.format(now, n_simulations)
     experiments_file = '{}_{}_experiments.p'.format(now, n_simulations)
-    partitions_file = '{}_{}_partitions.p'.format(now, n_simulations)
     print 'Pickling shoppers'
     pickle.dump(self.shoppers, open(shoppers_file, 'w'), protocol=pickle.HIGHEST_PROTOCOL)
     print 'Pickling experiments'
     pickle.dump(self.experiments, open(experiments_file, 'w'), protocol=pickle.HIGHEST_PROTOCOL)
 
+
   ## TODO 
   # Write shoppers to csv instead of pickle?
   # Analyze partitions
+
 
   def simulate(self, n_simulations):
     self.generate_shoppers()
@@ -128,5 +153,5 @@ class Simulator:
       self.bucket_shoppers(self.generate_experiment_name())
 
     # TODO - FIX me
-    return self.analyze_data()
+    return self.analyze_user_correlations()
 
