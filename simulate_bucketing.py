@@ -20,6 +20,23 @@ def save_to_csv(filename, results):
     for row in results:
       writer.writerow(row)
 
+# A class for simulating experiments on a partitioned user population.
+# Sample usage:
+
+# Set up a simulator that will simulate experiments on 100,000 users in 4 non-uniform partitions:
+# simulator = Simulator(100000, 4, False)
+
+# Populate the shoppers:
+# simulator.generate_shoppers()
+
+# Simulate 1,000 A/B tests:
+# simulator.simulate(1000)
+
+# Check whether bucket assignments are dependent across experiments
+# simulator.analyze_user_correlations()
+
+# Check whether there are any biased experiments
+# simulator.analyze_partition_splits(1)
 
 class Simulator:
   def __init__(self, n_shoppers, n_partitions, uniform_partitions=True):
@@ -27,15 +44,15 @@ class Simulator:
     self.shoppers = {str(shopper_id): { 'experiments': {}, 'cohorts': {}} for shopper_id in range(1, n_shoppers + 1)}
     self.partitions = {str(partition): 1.0/n_partitions for partition in range(1, n_partitions + 1)}
     if not uniform_partitions:
-      self.adjust_probabilities()
+      self._adjust_probabilities()
 
     # Keep a running total of the counts for each specific shopper segment
     # example experiment: { '1': { 'control': 10, 'treatment': 10 }, ... }
     self.experiments = {}
 
 
-  def adjust_probabilities(self):
-    """Shifts around partition probabilities, e.g.: 
+  def _adjust_probabilities(self):
+    """Shifts around partition probabilities a little, e.g.: 
       { p1: .2, p2: .2 } -> { p1: .1, p2: .3 }
     """
     partition_1, probability_1 = self.partitions.popitem()
@@ -105,8 +122,8 @@ class Simulator:
     p_vals = []
     print 'Analyzing results'
     for shopper in self.shoppers:
-      treatment_counts = self.shoppers[shopper]['cohorts']['treatment']
-      control_counts = self.shoppers[shopper]['cohorts']['control']
+      treatment_counts = self.shoppers[shopper]['cohorts'].get('treatment',0)
+      control_counts = self.shoppers[shopper]['cohorts'].get('control', 0)
 
       delta = abs(treatment_counts - control_counts)
       x2, p_val = stats.chisquare([treatment_counts, control_counts])
@@ -122,10 +139,12 @@ class Simulator:
     return results
 
 
-  def analyze_partition_splits(self):
+  def analyze_partition_splits(self, partition_number):
     splits = []
     for experiment in self.experiments:
-      x2, p_val = stats.chisquare(self.experiments[experiment]['1']['treatment'], self.experiments[experiment]['1']['treatment'])
+      x2, p_val = stats.chisquare(
+        self.experiments[experiment][str(partition_number)]['treatment'],
+        self.experiments[experiment][str(partition_number)]['treatment'])
       splits.append({ 'x2': x2, 'p': p_val })
 
     return splits
@@ -141,17 +160,11 @@ class Simulator:
     pickle.dump(self.experiments, open(experiments_file, 'w'), protocol=pickle.HIGHEST_PROTOCOL)
 
 
-  ## TODO 
-  # Write shoppers to csv instead of pickle?
-  # Analyze partitions
-
-
   def simulate(self, n_simulations):
     self.generate_shoppers()
     for n in range(1, n_simulations + 1):
       print 'Simulation', n
       self.bucket_shoppers(self.generate_experiment_name())
 
-    # TODO - FIX me
     return self.analyze_user_correlations()
 
